@@ -1,4 +1,5 @@
 import express from "express";
+import prices from "./config.json" assert { type: "json" };
 import Razorpay from "razorpay";
 import cors from "cors";
 import crypto from "crypto";
