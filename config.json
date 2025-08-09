@@ -1,4 +1,10 @@
 {
-  "JEE_MAINS_AITS": 1,
-  "JEE_ADVANCE_AITS": 1
+  "jee_mains": {
+    "name": "JEE Mains AITS",
+    "price": 499
+  },
+  "jee_advance": {
+    "name": "JEE Advance AITS",
+    "price": 999
+  }
 }
