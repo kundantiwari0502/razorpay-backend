@@ -52,7 +52,7 @@ app.post("/create-order", async (req, res) => {
 app.post("/webhook", (req, res) => {
   console.log("📩 Incoming webhook payload:", req.body);
   
-  const secret = "razorpay_webhook_secret"; // Use same secret from Razorpay dashboard
+  const secret = "kundantiwari0502"; // Use same secret from Razorpay dashboard
 
   const shasum = crypto.createHmac("sha256", secret);
   shasum.update(JSON.stringify(req.body));
