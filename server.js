@@ -50,7 +50,9 @@ app.post("/create-order", async (req, res) => {
 
 // Webhook route
 app.post("/webhook", (req, res) => {
-  const secret = "razorpay_webhook_secret"; // set same as in Razorpay dashboard
+  console.log("📩 Incoming webhook payload:", req.body);
+  
+  const secret = "razorpay_webhook_secret"; // Use same secret from Razorpay dashboard
 
   const shasum = crypto.createHmac("sha256", secret);
   shasum.update(JSON.stringify(req.body));
@@ -59,14 +61,13 @@ app.post("/webhook", (req, res) => {
   if (digest === req.headers["x-razorpay-signature"]) {
     console.log("✅ Webhook verified:", req.body);
 
-    // Example: Capture successful payment
     if (
       req.body.event === "payment.captured" ||
       req.body.event === "order.paid"
     ) {
       console.log("💰 Payment successful for:", req.body.payload.payment.entity.amount);
-      // Add DB update or email logic here
     }
+
     res.status(200).json({ status: "ok" });
   } else {
     console.warn("❌ Webhook signature verification failed.");
@@ -74,8 +75,3 @@ app.post("/webhook", (req, res) => {
   }
 });
 
-// Start server
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server is running on port ${PORT}`);
-});
