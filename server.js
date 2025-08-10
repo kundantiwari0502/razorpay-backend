@@ -6,9 +6,9 @@ const prices = require("./config.json");
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json()); // for normal routes
 
-// Razorpay instance with LIVE keys
+// Razorpay instance
 const razorpay = new Razorpay({
   key_id: "rzp_live_WcDsrduUyVLGWQ",
   key_secret: "NiX5haoQcs25BIISm5OXJtx3"
@@ -19,21 +19,22 @@ app.get("/", (req, res) => {
   res.send("Razorpay backend is running");
 });
 
-// Create order route
+// Create order
 app.post("/create-order", async (req, res) => {
   try {
-    const { productId } = req.body;
+    const { productId, userEmail } = req.body;
 
     if (!prices[productId]) {
       return res.status(400).json({ error: "Invalid product ID" });
     }
 
     const order = await razorpay.orders.create({
-      amount: prices[productId].price * 100, // convert Rs to paise
+      amount: prices[productId].price * 100, // in paise
       currency: "INR",
       receipt: `receipt_${Date.now()}`,
       notes: {
-        product_name: prices[productId].name
+        product_name: prices[productId].name,
+        user_email: userEmail
       }
     });
 
@@ -42,36 +43,45 @@ app.post("/create-order", async (req, res) => {
       currency: order.currency,
       amount: order.amount
     });
-  } catch (error) {
-    console.error(error);
-    res.status(500).send("Error creating order");
+  } catch (err) {
+    res.status(500).json({ error: "Order creation failed", details: err.message });
   }
 });
 
-// Webhook route
-app.post("/webhook", (req, res) => {
-  console.log("📩 Incoming webhook payload:", req.body);
-  
-  const secret = "kundantiwari0502"; // Use same secret from Razorpay dashboard
+// Example unlock logic
+function unlockUserAccess(userEmail, orderId) {
+  console.log(`✅ User access unlocked for email: ${userEmail}, order: ${orderId}`);
+  // Call Horizons API or update your DB here
+}
 
-  const shasum = crypto.createHmac("sha256", secret);
-  shasum.update(JSON.stringify(req.body));
-  const digest = shasum.digest("hex");
+// Webhook route with raw body parsing
+app.post("/webhook", express.raw({ type: "application/json" }), (req, res) => {
+  const webhookSecret = "kundantiwari0502";
+  const receivedSignature = req.headers["x-razorpay-signature"];
 
-  if (digest === req.headers["x-razorpay-signature"]) {
-    console.log("✅ Webhook verified:", req.body);
+  const expectedSignature = crypto
+    .createHmac("sha256", webhookSecret)
+    .update(req.body) // raw buffer
+    .digest("hex");
 
-    if (
-      req.body.event === "payment.captured" ||
-      req.body.event === "order.paid"
-    ) {
-      console.log("💰 Payment successful for:", req.body.payload.payment.entity.amount);
+  if (receivedSignature === expectedSignature) {
+    const event = JSON.parse(req.body.toString());
+    const payment = event.payload.payment.entity;
+
+    if (event.event === "payment.captured") {
+      const userEmail = payment.notes.user_email;
+      const orderId = payment.order_id;
+      unlockUserAccess(userEmail, orderId);
+      res.status(200).json({ status: "success" });
+    } else {
+      res.status(200).json({ status: "ignored" });
     }
-
-    res.status(200).json({ status: "ok" });
   } else {
-    console.warn("❌ Webhook signature verification failed.");
-    res.status(400).send("Invalid signature");
+    res.status(400).json({ status: "invalid signature" });
   }
 });
 
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🚀 Backend running on port ${PORT}`);
+});
