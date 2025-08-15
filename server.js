@@ -3,26 +3,43 @@ const Razorpay = require("razorpay");
 const cors = require("cors");
 const crypto = require("crypto");
 const prices = require("./config.json");
-const { createClient } = require("@supabase/supabase-js");
 
-// Supabase client
+const { createClient } = require("@supabase/supabase-js");
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
 const app = express();
+app.use(cors());
 
-/**
- * ✅ CORS (allows requests from http://localhost:3000 or any origin)
- *    this is needed so your local test HTML can access the backend
- */
-app.use(
-  cors({
-    origin: "*",
-    methods: ["GET","POST"]
-  })
-);
+// IMPORTANT — webhook uses raw body BEFORE express.json()
+app.post("/webhook", express.raw({ type: "application/json" }), (req, res) => {
+  const webhookSecret = "kundantiwari0502";
+  const receivedSignature = req.headers["x-razorpay-signature"];
+
+  const expectedSignature = crypto
+    .createHmac("sha256", webhookSecret)
+    .update(req.body)
+    .digest("hex");
+
+  if (receivedSignature === expectedSignature) {
+    const event = JSON.parse(req.body.toString());
+    const payment = event.payload.payment.entity;
+
+    if (event.event === "payment.captured") {
+      const phone = payment.contact;        // ☑ phone number is available here
+      const orderId = payment.order_id;
+      unlockUserAccess(phone, orderId);
+      res.status(200).json({ status: "success" });
+    } else {
+      res.status(200).json({ status: "ignored" });
+    }
+  } else {
+    res.status(400).json({ status: "invalid signature" });
+  }
+});
+
+// Parse JSON for all remaining routes
 app.use(express.json());
 
-// Razorpay instance (LIVE)
 const razorpay = new Razorpay({
   key_id: "rzp_live_WcDsrduUyVLGWQ",
   key_secret: "NiX5haoQcs25BIISm5OXJtx3"
@@ -32,13 +49,15 @@ app.get("/", (req, res) => {
   res.send("Razorpay backend is running");
 });
 
-// Create order (uses phone instead of email)
 app.post("/create-order", async (req, res) => {
   try {
-    const { productId, userPhone } = req.body;
+    const { productId, phone } = req.body;
 
     if (!prices[productId]) {
       return res.status(400).json({ error: "Invalid product ID" });
+    }
+    if (!phone) {
+      return res.status(400).json({ error: "Phone number required" });
     }
 
     const order = await razorpay.orders.create({
@@ -47,7 +66,7 @@ app.post("/create-order", async (req, res) => {
       receipt: `receipt_${Date.now()}`,
       notes: {
         product_name: prices[productId].name,
-        user_phone: userPhone
+        user_phone: phone
       }
     });
 
@@ -57,42 +76,20 @@ app.post("/create-order", async (req, res) => {
   }
 });
 
-// Save to Supabase on successful webhook
-async function unlockUserAccess(userPhone, orderId) {
-  console.log(`✅ User access unlocked for phone: ${userPhone}, order: ${orderId}`);
-
-  await supabase.from("payments").upsert({
-    phone: userPhone,
-    order_id: orderId,
-    unlocked: true
-  });
-}
-
-// Razorpay webhook
-app.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
-  const webhookSecret = "kundantiwari0502";
-  const receivedSignature = req.headers["x-razorpay-signature"];
-  const expectedSignature = crypto.createHmac("sha256", webhookSecret).update(req.body).digest("hex");
-
-  if (receivedSignature === expectedSignature) {
-    const event = JSON.parse(req.body.toString());
-    const payment = event.payload.payment.entity;
-
-    if (event.event === "payment.captured") {
-      await unlockUserAccess(payment.notes.user_phone, payment.order_id);
-    }
-    return res.status(200).json({ status: "success" });
+async function unlockUserAccess(phone, orderId) {
+  console.log(`✅ Access unlocked for phone: ${phone}, order: ${orderId}`);
+  try {
+    await supabase
+      .from("payments")
+      .upsert({
+        phone: phone,
+        order_id: orderId,
+        unlocked: true
+      });
+  } catch (err) {
+    console.error("❌ Supabase error:", err);
   }
-  return res.status(400).json({ status: "invalid signature" });
-});
-
-// Verify-payment endpoint
-app.get("/verify-payment", async (req, res) => {
-  const phone = req.query.phone;
-  const { data, error } = await supabase.from("payments").select("unlocked").eq("phone", phone).single();
-  if (error || !data) return res.json({ unlocked: false });
-  return res.json({ unlocked: data.unlocked });
-});
+}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
