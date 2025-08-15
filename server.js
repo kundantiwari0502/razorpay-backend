@@ -4,7 +4,6 @@ const cors = require("cors");
 const crypto = require("crypto");
 const prices = require("./config.json");
 
-// <--- Supabase client
 const { createClient } = require("@supabase/supabase-js");
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
@@ -23,10 +22,10 @@ app.get("/", (req, res) => {
   res.send("Razorpay backend is running");
 });
 
-// Create order
+// Create order  ✅ (now expects userPhone)
 app.post("/create-order", async (req, res) => {
   try {
-    const { productId, userEmail } = req.body;
+    const { productId, userPhone } = req.body;
 
     if (!prices[productId]) {
       return res.status(400).json({ error: "Invalid product ID" });
@@ -36,7 +35,10 @@ app.post("/create-order", async (req, res) => {
       amount: prices[productId].price * 100,
       currency: "INR",
       receipt: `receipt_${Date.now()}`,
-      notes: { product_name: prices[productId].name, user_email: userEmail }
+      notes: {
+        product_name: prices[productId].name,
+        user_phone: userPhone
+      }
     });
 
     res.json({ id: order.id, currency: order.currency, amount: order.amount });
@@ -45,24 +47,18 @@ app.post("/create-order", async (req, res) => {
   }
 });
 
-// ✅ Unlock logic: save to Supabase when webhook confirms payment
-async function unlockUserAccess(userEmail, orderId) {
-  console.log(`✅ User access unlocked for email: ${userEmail}, order: ${orderId}`);
+// ✅ Unlock logic: save phone to Supabase when webhook confirms payment
+async function unlockUserAccess(userPhone, orderId) {
+  console.log(`✅ User access unlocked for phone: ${userPhone}, order: ${orderId}`);
 
   try {
-    const { data, error } = await supabase
+    await supabase
       .from("payments")
       .upsert({
-        email: userEmail,
+        phone: userPhone,
         order_id: orderId,
         unlocked: true
       });
-
-    if (error) {
-      console.error("❌ Failed to update Supabase:", error);
-    } else {
-      console.log("✅ Supabase updated:", data);
-    }
   } catch (err) {
     console.error("❌ Supabase error:", err);
   }
@@ -83,9 +79,9 @@ app.post("/webhook", express.raw({ type: "application/json" }), (req, res) => {
     const payment = event.payload.payment.entity;
 
     if (event.event === "payment.captured") {
-      const userEmail = payment.notes.user_email;
+      const userPhone = payment.notes.user_phone;
       const orderId = payment.order_id;
-      unlockUserAccess(userEmail, orderId);
+      unlockUserAccess(userPhone, orderId);
       res.status(200).json({ status: "success" });
     } else {
       res.status(200).json({ status: "ignored" });
