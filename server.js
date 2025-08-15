@@ -4,9 +4,13 @@ const cors = require("cors");
 const crypto = require("crypto");
 const prices = require("./config.json");
 
+// <--- Supabase client
+const { createClient } = require("@supabase/supabase-js");
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+
 const app = express();
 app.use(cors());
-app.use(express.json()); // for normal routes
+app.use(express.json());
 
 // Razorpay instance
 const razorpay = new Razorpay({
@@ -29,39 +33,49 @@ app.post("/create-order", async (req, res) => {
     }
 
     const order = await razorpay.orders.create({
-      amount: prices[productId].price * 100, // in paise
+      amount: prices[productId].price * 100,
       currency: "INR",
       receipt: `receipt_${Date.now()}`,
-      notes: {
-        product_name: prices[productId].name,
-        user_email: userEmail
-      }
+      notes: { product_name: prices[productId].name, user_email: userEmail }
     });
 
-    res.json({
-      id: order.id,
-      currency: order.currency,
-      amount: order.amount
-    });
+    res.json({ id: order.id, currency: order.currency, amount: order.amount });
   } catch (err) {
     res.status(500).json({ error: "Order creation failed", details: err.message });
   }
 });
 
-// Example unlock logic
-function unlockUserAccess(userEmail, orderId) {
+// ✅ Unlock logic: save to Supabase when webhook confirms payment
+async function unlockUserAccess(userEmail, orderId) {
   console.log(`✅ User access unlocked for email: ${userEmail}, order: ${orderId}`);
-  // Call Horizons API or update your DB here
+
+  try {
+    const { data, error } = await supabase
+      .from("payments")
+      .upsert({
+        email: userEmail,
+        order_id: orderId,
+        unlocked: true
+      });
+
+    if (error) {
+      console.error("❌ Failed to update Supabase:", error);
+    } else {
+      console.log("✅ Supabase updated:", data);
+    }
+  } catch (err) {
+    console.error("❌ Supabase error:", err);
+  }
 }
 
-// Webhook route with raw body parsing
+// Webhook route
 app.post("/webhook", express.raw({ type: "application/json" }), (req, res) => {
   const webhookSecret = "kundantiwari0502";
   const receivedSignature = req.headers["x-razorpay-signature"];
 
   const expectedSignature = crypto
     .createHmac("sha256", webhookSecret)
-    .update(req.body) // raw buffer
+    .update(req.body)
     .digest("hex");
 
   if (receivedSignature === expectedSignature) {
