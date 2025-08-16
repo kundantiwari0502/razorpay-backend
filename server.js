@@ -12,6 +12,9 @@ app.use(cors());
 
 // ---- Razorpay webhook (raw body BEFORE express.json) ----
 app.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+  // 👉 Debug log
+  console.log("Webhook body:", req.body.toString());
+
   const webhookSecret = "kundantiwari0502";
   const receivedSignature = req.headers["x-razorpay-signature"];
 
@@ -24,24 +27,27 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
     const event = JSON.parse(req.body.toString());
     const payment = event.payload.payment.entity;
 
-   if (event.event === "payment.captured") {
-  let phone = payment.contact;
+    if (event.event === "payment.captured") {
+      let phone = payment.contact;
 
-  // Strip +91 if present
-  if (phone.startsWith("+91")) {
-    phone = phone.substring(3);
-  }
+      // Strip +91 if present
+      if (phone.startsWith("+91")) {
+        phone = phone.substring(3);
+      }
 
-  const orderId = payment.order_id;
-  await unlockUserAccess(phone, orderId);
-  return res.status(200).json({ status: "success" });
-}
+      const orderId = payment.order_id;
+      await unlockUserAccess(phone, orderId);
 
+      return res.status(200).json({ status: "success" });
+    }
+
+    // any other events
     return res.status(200).json({ status: "ignored" });
   }
 
   res.status(400).json({ status: "invalid signature" });
 });
+
 
 // JSON parser for all remaining routes
 app.use(express.json());
