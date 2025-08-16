@@ -110,20 +110,19 @@ app.get("/verify-payment", async (req, res) => {
     phone = phone.substring(3);
   }
 
+  // Find *all* rows for this phone
   const { data, error } = await supabase
     .from("payments")
     .select("unlocked")
-    .eq("phone", phone)
-    .single();
+    .eq("phone", phone);
 
   if (error) {
     return res.status(500).json({ unlocked: false, error: "Supabase query failed" });
   }
 
-  if (data && data.unlocked === true) {
-    return res.json({ unlocked: true });
-  }
-  return res.json({ unlocked: false });
+  // If ANY row has unlocked=true, grant access
+  const hasUnlocked = data.some(row => row.unlocked === true);
+  return res.json({ unlocked: hasUnlocked });
 });
 
 const PORT = process.env.PORT || 3000;
