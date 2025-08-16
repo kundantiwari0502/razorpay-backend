@@ -76,14 +76,16 @@ app.post("/create-order", async (req, res) => {
 // ---- Unlock logic (called from webhook) ----
 async function unlockUserAccess(phone, orderId) {
   console.log(`✅ Access unlocked for phone: ${phone}, order: ${orderId}`);
-
-  // ✅ strip the +91 prefix so it matches what the frontend sends
-  const cleanPhone = phone.startsWith("+91") ? phone.slice(3) : phone;
-
+  // insert a new row so users can buy multiple products with same phone
   await supabase
     .from("payments")
-    .upsert({ phone: cleanPhone, order_id: orderId, unlocked: true });
+    .insert({
+      phone: phone,
+      order_id: orderId,
+      unlocked: true
+    });
 }
+
 
 // ---- Verify endpoint (used by thank-you page) ----
 app.get("/verify-payment", async (req, res) => {
