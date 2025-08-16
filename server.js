@@ -96,10 +96,15 @@ async function unlockUserAccess(phone, orderId) {
 
 // ---- Verify endpoint (used by thank-you page) ----
 app.get("/verify-payment", async (req, res) => {
-  const phone = req.query.phone;
+  let phone = req.query.phone;
 
   if (!phone) {
     return res.status(400).json({ unlocked: false, error: "Phone number required" });
+  }
+
+  // Normalize phone (remove +91 if present)
+  if (phone.startsWith("+91")) {
+    phone = phone.substring(3);
   }
 
   const { data, error } = await supabase
@@ -115,8 +120,10 @@ app.get("/verify-payment", async (req, res) => {
   if (data && data.unlocked === true) {
     return res.json({ unlocked: true });
   }
+
   return res.json({ unlocked: false });
 });
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
