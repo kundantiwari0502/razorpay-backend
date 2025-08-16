@@ -58,7 +58,7 @@ app.post("/create-order", async (req, res) => {
   }
   if (!userPhone) {
     return res.status(400).json({ error: "Phone number required" });
-  }
+    }
 
   try {
     const order = await razorpay.orders.create({
@@ -76,9 +76,13 @@ app.post("/create-order", async (req, res) => {
 // ---- Unlock logic (called from webhook) ----
 async function unlockUserAccess(phone, orderId) {
   console.log(`✅ Access unlocked for phone: ${phone}, order: ${orderId}`);
+
+  // ✅ strip the +91 prefix so it matches what the frontend sends
+  const cleanPhone = phone.startsWith("+91") ? phone.slice(3) : phone;
+
   await supabase
     .from("payments")
-    .upsert({ phone: phone, order_id: orderId, unlocked: true });
+    .upsert({ phone: cleanPhone, order_id: orderId, unlocked: true });
 }
 
 // ---- Verify endpoint (used by thank-you page) ----
