@@ -24,12 +24,19 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
     const event = JSON.parse(req.body.toString());
     const payment = event.payload.payment.entity;
 
-    if (event.event === "payment.captured") {
-      const phone   = payment.contact;     // --> phone number from Razorpay
-      const orderId = payment.order_id;
-      await unlockUserAccess(phone, orderId);
-      return res.status(200).json({ status: "success" });
-    }
+   if (event.event === "payment.captured") {
+  let phone = payment.contact;
+
+  // Strip +91 if present
+  if (phone.startsWith("+91")) {
+    phone = phone.substring(3);
+  }
+
+  const orderId = payment.order_id;
+  await unlockUserAccess(phone, orderId);
+  return res.status(200).json({ status: "success" });
+}
+
     return res.status(200).json({ status: "ignored" });
   }
 
