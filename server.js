@@ -7,7 +7,7 @@ const { createClient } = require("@supabase/supabase-js");
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-// 👉 DEBUG: confirm env variables
+// Debug: Confirm Supabase env
 console.log("Supabase URL:", process.env.SUPABASE_URL);
 console.log("Supabase KEY exists:", !!process.env.SUPABASE_KEY);
 
@@ -20,34 +20,33 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
 
   const webhookSecret = "kundantiwari0502";
   const receivedSignature = req.headers["x-razorpay-signature"];
-
   const expectedSignature = crypto
     .createHmac("sha256", webhookSecret)
     .update(req.body)
     .digest("hex");
 
-  if (receivedSignature === expectedSignature) {
-    const event = JSON.parse(req.body.toString());
-    const payment = event.payload.payment.entity;
-
-    if (event.event === "payment.captured") {
-      let phone = payment.contact;
-      // Strip +91 if present
-      if (phone.startsWith("+91")) {
-        phone = phone.substring(3);
-      }
-      const orderId = payment.order_id;
-      await unlockUserAccess(phone, orderId);
-
-      return res.status(200).json({ status: "success" });
-    }
-    return res.status(200).json({ status: "ignored" });
+  if (receivedSignature !== expectedSignature) {
+    return res.status(400).json({ status: "invalid signature" });
   }
 
-  res.status(400).json({ status: "invalid signature" });
+  const event = JSON.parse(req.body.toString());
+  const payment = event.payload.payment.entity;
+
+  if (event.event === "payment.captured") {
+    let phone = payment.contact;
+    if (phone.startsWith("+91")) {
+      phone = phone.substring(3); // Strip country code
+    }
+
+    const orderId = payment.order_id;
+    await unlockUserAccess(phone, orderId);
+    return res.status(200).json({ status: "success" });
+  }
+
+  return res.status(200).json({ status: "ignored" });
 });
 
-// JSON parser for all remaining routes
+// Parse JSON after webhook
 app.use(express.json());
 
 const razorpay = new Razorpay({
@@ -82,20 +81,31 @@ app.post("/create-order", async (req, res) => {
   }
 });
 
+// ---- Unlock logic (called from webhook) ----
 async function unlockUserAccess(phone, orderId) {
   console.log(`✅ Access unlocked for phone: ${phone}, order: ${orderId}`);
-  await supabase.from("payments").insert({
-    phone,
-    order_id: orderId,
-    unlocked: true
-  });
+
+  // DEBUG — see what is being inserted
+  console.log("Inserting into Supabase:", { phone, order_id: orderId, unlocked: true });
+
+  const { data, error } = await supabase
+    .from("payments")
+    .insert({
+      phone,
+      order_id: orderId,
+      unlocked: true
+    });
+
+  // DEBUG — show result
+  console.log("Supabase insert result -> data:", data, "error:", error);
 }
 
+// ---- Verify endpoint (used by thank-you page) ----
 app.get("/verify-payment", async (req, res) => {
   let phone = req.query.phone;
-  if (!phone) {
-    return res.status(400).json({ unlocked: false, error: "Phone number required" });
-  }
+  if (!phone) return res.status(400).json({ unlocked: false, error: "Phone number required" });
+
+  // Strip +91 if user typed it in the URL
   if (phone.startsWith("+91")) {
     phone = phone.substring(3);
   }
@@ -106,9 +116,13 @@ app.get("/verify-payment", async (req, res) => {
     .eq("phone", phone)
     .single();
 
-  if (error) return res.status(500).json({ unlocked: false, error: "Supabase query failed" });
-  if (data && data.unlocked === true) return res.json({ unlocked: true });
+  if (error) {
+    return res.status(500).json({ unlocked: false, error: "Supabase query failed" });
+  }
 
+  if (data && data.unlocked === true) {
+    return res.json({ unlocked: true });
+  }
   return res.json({ unlocked: false });
 });
 
