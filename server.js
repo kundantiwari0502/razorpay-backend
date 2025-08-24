@@ -82,49 +82,68 @@ app.post("/create-order", async (req, res) => {
 });
 
 // ---- Unlock logic (called from webhook) ----
-async function unlockUserAccess(phone, orderId) {
-  console.log(`✅ Access unlocked for phone: ${phone}, order: ${orderId}`);
+async function unlockUserAccess(phone, orderId, productId) {
+  // Strip +91 if Razorpay/some client sends it with country code
+  if (phone && phone.startsWith("+91")) {
+    phone = phone.substring(3);
+  }
 
-  // DEBUG — see what is being inserted
-  console.log("Inserting into Supabase:", { phone, order_id: orderId, unlocked: true });
+  console.log(`✅ Access unlocked for phone: ${phone}, order: ${orderId}, product: ${productId}`);
 
+  // Insert payment record into Supabase
   const { data, error } = await supabase
     .from("payments")
     .insert({
       phone,
       order_id: orderId,
+      product: productId,
       unlocked: true
     });
 
-  // DEBUG — show result
-  console.log("Supabase insert result -> data:", data, "error:", error);
+  if (error) {
+    console.error("❌ Supabase insert failed:", error);
+  } else {
+    console.log("✅ Supabase insert success:", data);
+  }
 }
 
-// ---- Verify endpoint (used by thank-you page) ----
+// ---- Verify endpoint (used by thank-you page / dashboard) ----
 app.get("/verify-payment", async (req, res) => {
   let phone = req.query.phone;
-  if (!phone) return res.status(400).json({ unlocked: false, error: "Phone number required" });
+  const productId = req.query.productId;
 
-  // Strip +91 if user typed it in the URL
+  if (!phone || !productId) {
+    return res.status(400).json({ unlocked: false, error: "Phone and productId required" });
+  }
+
+  // Strip +91 if user typed it
   if (phone.startsWith("+91")) {
     phone = phone.substring(3);
   }
 
-  // Find *all* rows for this phone
-  const { data, error } = await supabase
-    .from("payments")
-    .select("unlocked")
-    .eq("phone", phone);
+  try {
+    // Look up payments for this phone + product
+    const { data, error } = await supabase
+      .from("payments")
+      .select("unlocked")
+      .eq("phone", phone)
+      .eq("product", productId);
 
-  if (error) {
-    return res.status(500).json({ unlocked: false, error: "Supabase query failed" });
+    if (error) {
+      console.error("❌ Supabase query failed:", error);
+      return res.status(500).json({ unlocked: false, error: "Supabase query failed" });
+    }
+
+    const hasUnlocked = data.some(row => row.unlocked === true);
+    return res.json({ unlocked: hasUnlocked });
+
+  } catch (err) {
+    console.error("❌ Unexpected error in verify-payment:", err);
+    return res.status(500).json({ unlocked: false, error: "Internal server error" });
   }
-
-  // If ANY row has unlocked=true, grant access
-  const hasUnlocked = data.some(row => row.unlocked === true);
-  return res.json({ unlocked: hasUnlocked });
 });
 
+// ---- Start server ----
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Backend running on port ${PORT}`);
