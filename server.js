@@ -39,7 +39,9 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
     }
 
     const orderId = payment.order_id;
-    await unlockUserAccess(phone, orderId);
+const productId = payment.notes.product_id; // get productId from notes
+await unlockUserAccess(phone, orderId, productId);
+
     return res.status(200).json({ status: "success" });
   }
 
@@ -73,7 +75,12 @@ app.post("/create-order", async (req, res) => {
       amount: prices[productId].price * 100,
       currency: "INR",
       receipt: `receipt_${Date.now()}`,
-      notes: { product_name: prices[productId].name, user_phone: userPhone }
+      notes: { 
+  product_id: productId,   // add this line
+  product_name: prices[productId].name, 
+  user_phone: userPhone 
+}
+
     });
     res.json({ id: order.id, currency: order.currency, amount: order.amount });
   } catch (err) {
