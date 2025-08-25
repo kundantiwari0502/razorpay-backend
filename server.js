@@ -110,7 +110,11 @@ async function unlockUserAccess(phone, orderId, productId) {
   if (phone && phone.startsWith("+91")) {
     phone = phone.substring(3);
   }
-
+// ✅ Guard against missing productId
+  if (!productId) {
+    console.error("❌ Missing productId; skipping insert", { phone, orderId });
+    return;
+  }
   console.log(`✅ Access unlocked for phone: ${phone}, order: ${orderId}, product: ${productId}`);
 
   // Insert payment record into Supabase
