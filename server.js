@@ -39,8 +39,24 @@ app.post("/webhook", express.raw({ type: "application/json" }), async (req, res)
     }
 
     const orderId = payment.order_id;
-const productId = payment.notes.product_id; // get productId from notes
+
+// Prefer payment.notes if present, else fallback to order.entity.notes
+let productId =
+  (payment.notes && payment.notes.product_id) ||
+  (event?.payload?.order?.entity?.notes && event.payload.order.entity.notes.product_id);
+
+// As a last resort, fetch order from Razorpay
+if (!productId) {
+  try {
+    const order = await razorpay.orders.fetch(orderId);
+    productId = order?.notes?.product_id || null;
+  } catch (e) {
+    console.error("Failed to fetch order for notes:", e);
+  }
+}
+
 await unlockUserAccess(phone, orderId, productId);
+
 
     return res.status(200).json({ status: "success" });
   }
@@ -141,8 +157,9 @@ app.get("/verify-payment", async (req, res) => {
       return res.status(500).json({ unlocked: false, error: "Supabase query failed" });
     }
 
-    const hasUnlocked = data.some(row => row.unlocked === true);
-    return res.json({ unlocked: hasUnlocked });
+    const hasUnlocked = Array.isArray(data) && data.some(row => row.unlocked === true);
+return res.json({ unlocked: hasUnlocked });
+
 
   } catch (err) {
     console.error("❌ Unexpected error in verify-payment:", err);
