@@ -149,7 +149,6 @@ app.get("/verify-payment", async (req, res) => {
   }
 
   try {
-    // Look up payments for this phone + product
     const { data, error } = await supabase
       .from("payments")
       .select("unlocked")
@@ -162,9 +161,7 @@ app.get("/verify-payment", async (req, res) => {
     }
 
     const hasUnlocked = Array.isArray(data) && data.some(row => row.unlocked === true);
-return res.json({ unlocked: hasUnlocked });
-
-
+    return res.json({ unlocked: hasUnlocked });
   } catch (err) {
     console.error("❌ Unexpected error in verify-payment:", err);
     return res.status(500).json({ unlocked: false, error: "Internal server error" });
